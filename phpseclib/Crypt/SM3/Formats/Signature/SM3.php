@@ -62,21 +62,8 @@ class SM3 extends BlockCipher
         if($this->engine == self::ENGINE_OPENSSL) {
             return openssl_digest($plaintext, $this->cipher_name_openssl);
         }else{
-            $md = array();
-            $sm3 = new SM3Digest();
-            $msgArray = unpack('C*', $plaintext);
-            $sm3->BlockUpdate($msgArray, 1, sizeof($msgArray));
-            $sm3->DoFinal($md, 0);
-            return $this->_dec2hex($md);
+            return SM3Digest::hash($plaintext);
         }
-    }
-
-    protected function _dec2hex($md){
-        $res = array();
-        for($i=0; $i<count($md);$i++){
-            $res[$i] = sprintf('%02x',$md[$i]);
-        }
-        return implode('', $res);
     }
 
     protected function encryptBlock(string $in): string
