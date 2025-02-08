@@ -123,11 +123,8 @@ class SM4 extends BlockCipher
             throw new Exception("不支持的模式：{$mode}，只支持 " . implode(', ', $supported_modes));
         }
         parent::__construct($mode);
-        $this->mode = $mode;
+        $this->mode = self::MODE_MAP[$mode];
         if ($mode !== 'ecb') {
-            if ($iv === null || strlen($iv) !== 16) {
-                throw new Exception("模式 {$mode} 需要提供16字节IV");
-            }
             $this->setIV($iv);
         }
         $this->setEngine();
@@ -144,11 +141,14 @@ class SM4 extends BlockCipher
      */
     public function encrypt(string $plaintext): string
     {
+        if($this->getEngine() == self::ENGINE_MAP[self::ENGINE_OPENSSL]){
+            return parent::encrypt($plaintext);
+        }
         $plaintext = self::pkcs7Pad($plaintext, 16);
         $blocks = str_split($plaintext, 16);
         $result = '';
 
-        switch ($this->mode) {
+        switch (array_search($this->mode, self::MODE_MAP)) {
             case 'ecb':
                 foreach ($blocks as $block) {
                     $result .= $this->encryptBlock($block);
@@ -202,10 +202,13 @@ class SM4 extends BlockCipher
      */
     public function decrypt(string $ciphertext): string
     {
+        if($this->getEngine() == self::ENGINE_MAP[self::ENGINE_OPENSSL]){
+            return parent::decrypt($ciphertext);
+        }
         $blocks = str_split($ciphertext, 16);
         $result = '';
 
-        switch ($this->mode) {
+        switch (array_search($this->mode, self::MODE_MAP)) {
             case 'ecb':
                 foreach ($blocks as $block) {
                     $result .= $this->decryptBlock($block);
@@ -347,9 +350,7 @@ class SM4 extends BlockCipher
 
     protected function setupInlineCrypt(): void
     {
-        if($this->getEngine() == self::ENGINE_MAP[self::ENGINE_EVAL]){
-            $this->rk = self::fallbackGenerateRoundKeys($this->key);
-        }
+        $this->rk = self::fallbackGenerateRoundKeys($this->key);
     }
 
     // 生成32轮密钥数组，传入 16 字节密钥，输出32个32位整数
