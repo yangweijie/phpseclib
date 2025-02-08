@@ -118,10 +118,6 @@ class SM4 extends BlockCipher
         }
         $this->key = $key;
         $mode = strtolower($mode);
-        $supported_modes = ['cbc', 'ecb', 'ofb', 'cfb', 'ctr'];
-        if (!in_array($mode, $supported_modes, true)) {
-            throw new Exception("不支持的模式：{$mode}，只支持 " . implode(', ', $supported_modes));
-        }
         parent::__construct($mode);
         $this->mode = self::MODE_MAP[$mode];
         if ($mode !== 'ecb') {
