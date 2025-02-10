@@ -5,6 +5,7 @@ namespace phpseclib3\Crypt;
 use Exception;
 use phpseclib3\Crypt\SM2\PublicKey;
 use phpseclib3\File\ASN1;
+use phpseclib3\Math\BigInteger;
 
 class SM2 {
     protected EC $ec;
@@ -76,11 +77,15 @@ class SM2 {
 
         $ec_temp = EC::createKey(self::$curve);
         $publicKeyObj = $ec_temp->loadPublicKey($C1);
-        // 获取底层的椭圆曲线点对象
-        $C1_point = $publicKeyObj->toString('uncompressed'); // Replace with the correct method to get the point
+        // 通过 getPoint() 获取 C1 的椭圆曲线点对象
+        $C1_point = $publicKeyObj->getPoint();
 
-        $privateKey = $this->ec->toString('PKCS8');
-        $sharedPoint = $C1_point->getPoint()->multiply($privateKey);
+        // 获取本地私钥，并确保为 BigInteger 类型
+        $privateKey = $this->ec->getPrivateKey();
+        $privateKey = ($privateKey instanceof BigInteger) ? $privateKey : new BigInteger($privateKey, 16);
+
+        // 计算共享点：P = [d] * C1_point，其中 d 为本地私钥
+        $sharedPoint = $C1_point->multiply($privateKey);
 
         $x2 = self::fixedLength($sharedPoint->getX());
         $y2 = self::fixedLength($sharedPoint->getY());
