@@ -23,7 +23,7 @@ class SM2 {
     }
 
     public function getPublicKey(): PublicKey {
-        return new PublicKey($this->ec->getParameters()->getPublicKey(), $this->mode);
+        return new PublicKey($this->ec->getPublicKey(), $this->mode);
     }
 
     /**

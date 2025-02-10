@@ -46,12 +46,11 @@ class PublicKey
         // 1. 生成随机数 k 及临时密钥对 ephemeral
         $ec_temp = EC::createKey($curve);
         $ephemeralKey = $ec_temp;
-        $C1 = $ephemeralKey->getPublicKey()->toString('uncompressed'); // 65 字节格式
-
+        $C1 = bin2hex($ephemeralKey->multiply($ephemeralKey->getPublicKey()->getEncodedCoordinates())); // 65 字节格式
         // 2. 计算共享点：P = [k] * recipientPublic，其中 k 为 ephemeralKey 的私钥
         // 将私钥转换为 BigInteger 对象：
-        $k = new BigInteger($ephemeralKey->toString('dec'));
-        $sharedPoint = $this->publicKey->getPoint()->multiply($k); // 先获取公钥的点对象再调用乘法
+        $k = new BigInteger(bin2hex(str_replace(PHP_EOL, '', $ec_temp)), 16);
+        $sharedPoint = $this->publicKey->getParameters()->multiply($k); // 先获取公钥的点对象再调用乘法
 
         // 3. 转换共享点坐标为定长 32 字节大端格式
         $x2 = SM2Base::fixedLength($sharedPoint->getX());
