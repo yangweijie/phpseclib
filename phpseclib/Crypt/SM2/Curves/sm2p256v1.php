@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace phpseclib3\Crypt\EC\Curves;
+namespace phpseclib3\Crypt\SM2\Curves;
 
 use phpseclib3\Crypt\EC\BaseCurves\Prime;
 use phpseclib3\Math\BigInteger;
@@ -12,6 +12,7 @@ class sm2p256v1 extends Prime
     public function __construct()
     {
         // SM2 椭圆曲线参数
+        // p
         $this->setModulo(new BigInteger('FFFFFFFEFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF00000000FFFFFFFFFFFFFFFF', 16));
         $this->setCoefficients(
             new BigInteger('FFFFFFFEFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF00000000FFFFFFFFFFFFFFFC', 16), // a
@@ -21,6 +22,21 @@ class sm2p256v1 extends Prime
             new BigInteger('32C4AE2C1F1981195F9904466A39C9948FE30BBFF2660BE1715A4589334C74C7', 16), // Gx
             new BigInteger('BC3736A2F4F6779C59BDCEE36B692153D0A9877CC62A474002DF32E52139F0A0', 16)  // Gy
         );
+        // n
         $this->setOrder(new BigInteger('FFFFFFFEFFFFFFFFFFFFFFFFFFFFFFFF7203DF6B21C6052B53BBF40939D54123', 16));
+    }
+
+    public function getParams(): array
+    {
+        list($gx, $gy) = $this->getBasePoint();
+        return [
+            'p'=>$this->getModulo(),
+            'a'=>$this->getA(),
+            'b'=>$this->getB(),
+            'n'=>$this->getOrder(),
+            'gx'=>$gx,
+            'gy'=>$gy,
+            'size'=>$this->getLength(),
+        ];
     }
 }
