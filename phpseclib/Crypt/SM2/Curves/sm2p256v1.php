@@ -30,13 +30,13 @@ class sm2p256v1 extends Prime
     {
         list($gx, $gy) = $this->getBasePoint();
         return [
-            'p'=>$this->getModulo(),
-            'a'=>$this->getA(),
-            'b'=>$this->getB(),
-            'n'=>$this->getOrder(),
-            'gx'=>$gx,
-            'gy'=>$gy,
-            'size'=>$this->getLength(),
+            'p'=>gmp_init($this->getModulo()->toHex(), 16),
+            'a'=>gmp_init($this->getA()->toHex(), 16),
+            'b'=>gmp_init($this->getB()->toHex(), 16),
+            'n'=>gmp_init($this->getOrder()->toHex(), 16),
+            'gx'=>gmp_init($gx->toHex(), 16),
+            'gy'=>gmp_init($gy->toHex(), 16),
+            'size'=>256,
         ];
     }
 }

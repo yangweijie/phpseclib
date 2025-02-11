@@ -3,27 +3,27 @@
 namespace phpseclib3\Crypt\SM2;
 
 use Exception;
+use GMP;
 use phpseclib3\Crypt\SM2\Curves\sm2p256v1;
-use phpseclib3\Math\BigInteger;
 
 class Point
 {
     protected array $eccParams;
-    protected BigInteger $x;
-    protected BigInteger $y;
-    protected BigInteger $one;
-    protected BigInteger $zero;
-    protected BigInteger $two;
-    protected BigInteger $three;
+    protected GMP $x;
+    protected GMP $y;
+    protected GMP $one;
+    protected GMP $zero;
+    protected GMP $two;
+    protected GMP $three;
 
-    public function __construct(BigInteger $x, BigInteger $y)
+    public function __construct(GMP $x, GMP $y)
     {
         $this->x = $x;
         $this->y = $y;
-        $this->one = new BigInteger(1);
-        $this->two = new BigInteger(2);
-        $this->three = new BigInteger(3);
-        $this->zero = new BigInteger(0);
+        $this->one = gmp_init(1, 10);
+        $this->two = gmp_init(2, 10);
+        $this->three = gmp_init(3, 10);
+        $this->zero = gmp_init(0, 10);
         $this->init();
     }
 
@@ -37,20 +37,10 @@ class Point
         $this->eccParams = $eccParams;
     }
 
-    public function sign(BigInteger $value): int
+    public function mul(GMP $n, $isBase = true): Point
     {
-        return $value->compare($this->zero) == 0? 0: ($value->compare($this->zero) > 0? 1 : -1);
-    }
-
-    public function mod(BigInteger $a, BigInteger $b): BigInteger
-    {
-        return new BigInteger(intval($a->toString()) % intval($b->toString()));
-    }
-
-    public function mul(BigInteger $n, $isBase = true): Point
-    {
-        $zero = $this->zero;
-        $n = $this->mod($n, $this->eccParams['p']);
+        $zero = gmp_init(0, 10);
+        $n = gmp_mod($n, $this->eccParams['p']);
         if ($this->cmp($n, $zero) === 0) {
             return $this->getInfinity();
         }
@@ -60,7 +50,7 @@ class Point
             $this->getInfinity(), // Q
             $p// P
         ];
-        $base = new BigInteger((new BigInteger($n->toString())), 2);
+        $base = gmp_strval(gmp_init(gmp_strval($n), 10), 2);
         $n = strrev(str_pad($base, $this->eccParams['size'], '0', STR_PAD_LEFT));
         for ($i = 0; $i < $this->eccParams['size']; $i++) {
             $j = $n[$i];
@@ -95,13 +85,13 @@ class Point
         }
 
         $slope = $this->divMod(// λ = (y2 - y1) / (x2 - x1) (mod p)
-            $addend->getY()->subtract($this->y),  // y2 - y1
-            $addend->getX()->subtract($this->x)  // x2 - x1
+            gmp_sub($addend->getY(), $this->y),  // y2 - y1
+            gmp_sub($addend->getX(), $this->x)  // x2 - x1
         );
         // λ² - x1 - x2
-        $xR = $this->subMod($slope->pow($this->two)->subtract($this->x), $addend->getX());
+        $xR = $this->subMod(gmp_sub(gmp_pow($slope, 2), $this->x), $addend->getX());
         // (λ(x1 - x3)-y1)
-        $yR = $this->subMod($slope->multiply($this->x->subtract($xR)), $this->y);
+        $yR = $this->subMod(gmp_mul($slope, gmp_sub($this->x, $xR)), $this->y);
 
         return new self($xR, $yR);
     }
@@ -111,17 +101,17 @@ class Point
         if ($this->isInfinity()) {
             return $this->getInfinity();
         }
-        $threeX2 = $this->three->multiply($this->x->pow($this->two)); // 3x²
+        $threeX2 = gmp_mul(gmp_init(3, 10), gmp_pow($this->x, 2)); // 3x²
         $tangent = $this->divMod( // λ = (3x² + a) / 2y (mod p)
-            $threeX2->add($this->eccParams['a']),  // 3x² + a
-            $this->two->multiply($this->y)  // 2y
+            gmp_add($threeX2, $this->eccParams['a']),  // 3x² + a
+            gmp_mul(gmp_init(2, 10), $this->y)  // 2y
         );
         $x3 = $this->subMod(  // λ² - 2x (mod p)
-            $tangent->pow($this->two),// λ²
-            $this->two->multiply($this->x),// 2x
+            gmp_pow($tangent, 2), // λ²
+            gmp_mul(gmp_init(2, 10), $this->x) // 2x
         );
         $y3 = $this->subMod( // λ(x - x3)-y  (mod p)
-            $tangent->multiply($this->x->subtract($x3)), // λ(x - x3)
+            gmp_mul($tangent, gmp_sub($this->x, $x3)), // λ(x - x3)
             $this->y
         );
 
@@ -130,65 +120,74 @@ class Point
 
     public function getInfinity(): Point
     {
-        return new self($this->zero, $this->zero);
+        return new self(gmp_init(0, 10), gmp_init(0, 10));
     }
 
     /**
-     * @return BigInteger
+     * @return GMP
      */
-    public function getX(): BigInteger
+    public function getX(): GMP
     {
         return $this->x;
     }
 
     /**
-     * @return BigInteger
+     * @return GMP
      */
-    public function getY()
+    public function getY(): GMP
     {
         return $this->y;
     }
 
     public function isInfinity(): bool
     {
-        return $this->x->compare($this->zero) === 0 && $this->y->compare($this->zero);
+        return $this->cmp($this->x, gmp_init(0, 10)) === 0
+            && $this->cmp($this->y, gmp_init(0, 10)) === 0;
     }
 
     /**
-     *  k ≡ (x/y) (mod n) => ky ≡ x (mod n) => k y/x ≡ 1 (mod n)
-     * @param BigInteger $x
-     * @param BigInteger $y
-     * @param BigInteger|null $n
-     * @return BigInteger
+     * // k ≡ (x/y) (mod n) => ky ≡ x (mod n) => k y/x ≡ 1 (mod n)
+     * @param GMP $x
+     * @param GMP $y
+     * @param GMP|null $n
+     * @return GMP
      */
-    protected function divMod(BigInteger $x, BigInteger $y, $n = null): BigInteger
+    protected function divMod(GMP $x, GMP $y, GMP $n = null): GMP
     {
         $n = $n ?: $this->eccParams['p'];
         // y k ≡ 1 (mod n) => k ≡ 1/y (mod n)
-        $k = $y->modInverse($n);
+        $k = gmp_invert($y, $n);
         // kx ≡ x/y (mod n)
-        $kx = $x->multiply($k);
+        $kx = gmp_mul($x, $k);
 
-        return $this->mod($kx, $n);
+        return gmp_mod($kx, $n);
     }
 
-
-    protected function subMod(BigInteger $x, BigInteger $y, $n = null): BigInteger
+    protected function subMod($x, $y, $n = null)
     {
-        return $this->mod($x->subtract($y), $n ?: $this->eccParams['p']);
+        return gmp_mod(gmp_sub($x, $y), $n ?: $this->eccParams['p']);
     }
 
-    public function contains(BigInteger $x, BigInteger $y): int
+    public function contains(GMP $x, GMP $y): int
     {
         return $this->cmp(
             $this->subMod(
-                $y->pow($this->two),
-                ($x->pow($this->three)->add($this->eccParams['a']->multiply($x)))->add($this->eccParams['b']),
+                gmp_pow($y, 2),
+                gmp_add(
+                    gmp_add(
+                        gmp_pow($x, 3),
+                        gmp_mul($this->eccParams['a'], $x)
+                    ),
+                    $this->eccParams['b']
+                )
             ),
-            $this->zero
+            gmp_init(0, 10)
         );
     }
 
+    /*
+     * @ throw Exception
+     */
     public function checkOnLine(): bool
     {
         if ($this->contains($this->x, $this->y) !== 0) {
@@ -197,24 +196,22 @@ class Point
 
         return true;
     }
-
-    public function cmp2(BigInteger $a, BigInteger $b): int
+    public function cmp2(GMP $a, GMP $b): int
     {
-        return $a->compare($b);
+        return gmp_cmp($a, $b);
     }
-
     /**
      * Compare two GMP objects, without timing leaks.
      *
-     * @param BigInteger $first
-     * @param BigInteger $other
+     * @param GMP $first
+     * @param GMP $other
      * @return int -1 if $first < $other
      *              0 if $first === $other
      *              1 if $first > $other
      */
     public function cmp(
-        BigInteger $first,
-        BigInteger $other
+        GMP $first,
+        GMP $other
     ): int {
         /**
          * @var string $left
@@ -223,8 +220,8 @@ class Point
          */
         list($left, $right, $length) = $this->normalizeLengths($first, $other);
 
-        $first_sign = $this->sign($first);
-        $other_sign = $this->sign($other);
+        $first_sign = gmp_sign($first);
+        $other_sign = gmp_sign($other);
         list($gt, $eq) = $this->compareSigns($first_sign, $other_sign);
 
         for ($i = 0; $i < $length; ++$i) {
@@ -233,20 +230,19 @@ class Point
         }
         return ($gt + $gt + $eq) - 1;
     }
-
     /**
      * Normalize the lengths of two input numbers.
      *
-     * @param BigInteger $a
-     * @param BigInteger $b
+     * @param GMP $a
+     * @param GMP $b
      * @return array<string|int, string|int>
      */
     public function normalizeLengths(
-        BigInteger $a,
-        BigInteger $b
+        GMP $a,
+        GMP $b
     ): array {
-        $a_hex = $a->abs()->toHex();
-        $b_hex = $b->abs()->toHex();
+        $a_hex = gmp_strval(gmp_abs($a), 16);
+        $b_hex = gmp_strval(gmp_abs($b), 16);
         $length = max(strlen($a_hex), strlen($b_hex));
         $length += $length & 1;
 

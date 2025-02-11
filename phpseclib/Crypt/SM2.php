@@ -3,6 +3,7 @@
 namespace phpseclib3\Crypt;
 
 use Exception;
+use GMP;
 use phpseclib3\Crypt\SM2\Curves\sm2p256v1;
 use phpseclib3\Crypt\SM2\Point;
 use phpseclib3\Crypt\SM3\SM3Digest;
@@ -40,6 +41,10 @@ class SM2 {
         '04e27c3780e7069bda7082a23a489d77587ce309583ed99253f66e1d9833ed1a1d0b5ce86dc6714e9974cf258589139d7b1855e8c9fa2f2c1175ee123a95a23e9b'
     ];
     private sm2p256v1 $curve;
+    /**
+     * @var mixed
+     */
+    private $publicKey;
 
     function __construct()
     {
@@ -54,11 +59,6 @@ class SM2 {
         $this->gy = $eccParams['gy'];
     }
 
-    public function mod(BigInteger $a, BigInteger $b): BigInteger
-    {
-        return new BigInteger(intval($a->toString()) % intval($b->toString()));
-    }
-
     public function generalPair(): array
     {
         $pointG = new Point($this->gx, $this->gy);
@@ -71,12 +71,12 @@ class SM2 {
     /**
      * 通过私钥算公钥  Pub = pG
      *
-     * @param BigInteger $prikeyGmp
-     * @param null $pointG
+     * @param GMP $prikeyGmp
+     * @param GMP $pointG
      * @return string
      * @throws Exception
      */
-    public function getPkeyFromPrikey(BigInteger $prikeyGmp, $pointG = null): string
+    public function getPkeyFromPrikey(GMP $prikeyGmp, $pointG = null): string
     {
         if (empty($pointG)) {
             $pointG = new Point($this->gx, $this->gy);
@@ -104,14 +104,14 @@ class SM2 {
      */
     public function signRaw($document, $prikey, $publicKey = null, $userId = null): array
     {
-        $gmpPrikey = new BigInteger($prikey, 16);
+        $gmpPrikey = gmp_init($prikey, 16);
         // 如果知道公钥直接填上是好的，减少运算，虽说从私钥可以算出公钥，这不浪费资源不是
         if (empty($publicKey)) {
             $publicKey = $this->getPkeyFromPrikey($gmpPrikey);
         }
 
         $hash = $this->getSm2withSm3Hash($document, $publicKey, $userId);
-        $gmpHash = new BigInteger($hash, 16);
+        $gmpHash = gmp_init($hash, 16);
 
         $count = 0;
         while (true) {
@@ -125,22 +125,22 @@ class SM2 {
             $k = $this->_getForeignPrikey($document);
             // var_dump(gmp_strval($k,16),'21fbd478026e2d668e3570e514de0d312e443d1e294c1ca785dfbfb5f74de225');
             $gmpP1x = $this->_getForeignPubKeyX($k);
-            $r = $this->mod($gmpHash->add($gmpP1x), $this->n);
-            $zero = new BigInteger(0);
-            if ($r->compare($zero) === 0) {
+            $r = gmp_mod(gmp_add($gmpHash, $gmpP1x), $this->n);
+            $zero = gmp_init(0, 10);
+            if (gmp_cmp($r, $zero) === 0) {
                 continue; //报错重来一次
             }
 
-            $one = new BigInteger(1);
-            $s1 = new BigInteger(gmp_invert($one->add($gmpPrikey), $this->n));
-            $s2 = $k->subtract($r->multiply( $gmpPrikey));
-            $s = $this->mod($s1->multiply($s2), $this->n);
+            $one = gmp_init(1, 10);
+            $s1 = gmp_invert(gmp_add($one, $gmpPrikey), $this->n);
+            $s2 = gmp_sub($k, gmp_mul($r, $gmpPrikey));
+            $s = gmp_mod(gmp_mul($s1, $s2), $this->n);
 
-            if ($s->compare($zero) === 0) {
+            if (gmp_cmp($s, $zero) === 0) {
                 continue;
                 // throw new \RuntimeException('Error: random number S = 0');
             }
-            return [new BigInteger($r, 16), new BigInteger($s, 16)];
+            return array(gmp_strval($r, 16), gmp_strval($s, 16));
         }
     }
 
@@ -148,7 +148,7 @@ class SM2 {
     public function verify($document, $publicKey, $sign, $userId = null): bool
     {
         list($hexR, $hexS) = ASN1::class::asn1ToRs($sign);
-        return $this->veriftySignRaw($document, $publicKey, $hexR, $hexS, $userId);
+        return $this->verifySignRaw($document, $publicKey, $hexR, $hexS, $userId);
     }
 
 
@@ -163,7 +163,7 @@ class SM2 {
      * @return bool
      * @throws Exception
      */
-    public function veriftySignRaw($document, $publicKey, $hexR, $hexS, $userId = null): bool
+    public function verifySignRaw($document, $publicKey, $hexR, $hexS, $userId = null): bool
     {
         $plen = strlen($publicKey);
         if ($plen == 130 && substr($publicKey, 0, 2) == '04') {
@@ -176,35 +176,35 @@ class SM2 {
             throw new Exception("bad publicKey $publicKey");
         }
         // 1.2.3.4 sm3 取msg,userid的 hash值,
-        $hash = new BigInteger($this->getSm2withSm3Hash($document, $publicKey, $userId), 16);
+        $hash = gmp_init($this->getSm2withSm3Hash($document, $publicKey, $userId), 16);
 
-        $r = new BigInteger($hexR, 16);
-        $s = new BigInteger($hexS, 16);
+        $r = gmp_init($hexR, 16);
+        $s = gmp_init($hexS, 16);
         $n = $this->n;
 
-        $one = new BigInteger(1);
-        if ($r->compare($one) < 0 || $r->compare($n->subtract($one)) > 0) {
+        $one = gmp_init(1, 10);
+        if (gmp_cmp($r, $one) < 0 || gmp_cmp($r, gmp_sub($n, $one)) > 0) {
             return false;
         }
 
-        if ($s->compare($one) < 0 || $s->compare($n->subtract($one)) > 0) {
+        if (gmp_cmp($s, $one) < 0 || gmp_cmp($s, gmp_sub($n, $one)) > 0) {
             return false;
         }
 
         // 第五步 计算t=(r'+s')mod n
-        $t = $this->mod($r->add($s), $n);
+        $t = gmp_mod(gmp_add($r, $s), $n);
         // // 第六步 计算(x1,y1) = [s]G + [t]P
         $pointG = new Point($this->gx, $this->gy); //生成基准点
         $p1 = $pointG->mul($s, false); // p1 = sG
-        $pointPub = new Point(new BigInteger($pubX, 16), new BigInteger($pubY, 16)); //生成公钥的基准点
+        $pointPub = new Point(gmp_init($pubX, 16), gmp_init($pubY, 16)); //生成公钥的基准点
         $p2 = $pointPub->mul($t, false); // p2 = tP
         $xy = $p1->add($p2);
         // // 第七步 vR=(hash' + x1')
-        $v = $this->mod($hash->add($xy->getX()), $n);
+        $v = gmp_mod(gmp_add($hash, $xy->getX()), $n);
 
         // 最后结果 比较 $v和$r是否一致
         // var_dump(gmp_strval($v,16),$hexR);
-        return new BigInteger($v, 16) == $hexR;
+        return gmp_strval($v, 16) == $hexR;
     }
 
     /**
@@ -247,7 +247,7 @@ class SM2 {
 
             if ($this->fixForeignKey) { //使用固定的第中间椭圆
                 list($x1, $y1) = $this->_getPubXy($this->foreignKey[1], false);
-                $k = new BigInteger($this->foreignKey[0], 16);
+                $k = gmp_init($this->foreignKey[0], 16);
 
                 $x1 = $this->format_hex($x1, 64); // 不足前面补0
                 $y1 = $this->format_hex($y1, 64); // 不足前面补0
@@ -261,9 +261,8 @@ class SM2 {
             }
             $c1 = $x1 . $y1;
             $kPb = $point->mul($k, false);
-            dump($kPb->getX());
-            $x2 = new BigInteger($kPb->getX(), 16);
-            $y2 = new BigInteger($kPb->getY(), 16);
+            $x2 = gmp_strval($kPb->getX(), 16);
+            $y2 = gmp_strval($kPb->getY(), 16);
             $x2 = pack('H*', str_pad($x2, 64, 0, STR_PAD_LEFT));
             $y2 = pack('H*', str_pad($y2, 64, 0, STR_PAD_LEFT));
             $t = $this->kdf($x2 . $y2, strlen($data));
@@ -295,7 +294,7 @@ class SM2 {
      * @return string
      * @throws Exception
      */
-    public function decrypt($prikey, $encryptData, $model = 'C1C3C2', $trim = true)
+    public function decrypt($prikey, $encryptData, $model = 'C1C3C2', $trim = true): string
     {
         if (strlen($prikey) == 66 && substr($prikey, 0, 2) == '00') {
             $prikey = substr($prikey, 2); // 个别的key 前面带着00
@@ -318,9 +317,9 @@ class SM2 {
     {
         list($x1, $y1) = $this->_getPubXy($c1);
         $point = new Point($x1, $y1);
-        $dbC1 = $point->mul(new BigInteger($prikey, 16), false);
-        $x2 = new BigInteger($dbC1->getX(), 16);
-        $y2 = new BigInteger($dbC1->getY(), 16);
+        $dbC1 = $point->mul(gmp_init($prikey, 16), false);
+        $x2 = gmp_strval($dbC1->getX(), 16);
+        $y2 = gmp_strval($dbC1->getY(), 16);
         $x2 = pack('H*', str_pad($x2, 64, 0, STR_PAD_LEFT));
         $y2 = pack('H*', str_pad($y2, 64, 0, STR_PAD_LEFT));
         $len = strlen($c2);
@@ -387,37 +386,37 @@ class SM2 {
      * 也可其他随机函数生成
      *
      * @param integer $numBits
-     * @return BigInteger
+     * @return GMP|resource
      * @throws Exception
      */
-    public function randPrikey(int $numBits = 256): BigInteger
+    public function randPrikey(int $numBits = 256)
     {
         if (!function_exists('gmp_random_bits')) {
             return $this->_getForeignPrikey('loveyou' . microtime());
         }
-        $value = BigInteger::random($numBits);
-        $mask = (new BigInteger($numBits))->pow(new BigInteger(2))->subtract(new BigInteger(1));
-        return $value->bitwise_and($mask);
+        $value = gmp_random_bits($numBits);
+        $mask = gmp_sub(gmp_pow(2, $numBits), 1);
+        return gmp_and($value, $mask);
     }
 
     /**
      * gmp 转 hex,并用0补齐位数
      *
-     * @param BigInteger|int $dec
+     * @param GMP|int $dec
      * @param integer $len
      * @return string
      * @throws Exception
      */
-    public function decHex($dec, int $len = 0): string
+    public function decHex($dec, $len = 0): string
     {
-        if (!$dec instanceof BigInteger) {
-            $dec = new BigInteger($dec);
+        if (!$dec instanceof GMP) {
+            $dec = gmp_init($dec, 10);
         }
-        if ($dec->compare(new BigInteger(0)) < 0) {
+        if (gmp_cmp($dec, 0) < 0) {
             throw new Exception('Unable to convert negative integer to string');
         }
 
-        $hex = $dec->toHex();
+        $hex = gmp_strval($dec, 16);
 
         if (strlen($hex) % 2 != 0) {
             $hex = '0' . $hex;
@@ -425,6 +424,7 @@ class SM2 {
         if ($len && strlen($hex) < $len) {  // point x y 要补齐 64 位
             $hex = str_pad($hex, $len, "0", STR_PAD_LEFT);
         }
+
         return $hex;
     }
 
@@ -432,10 +432,9 @@ class SM2 {
      * 生成随机私钥
      *
      * @param string $document
-     * @return BigInteger
-     * @throws Exception
+     * @return GMP
      */
-    protected function _getForeignPrikey($document = ''): BigInteger
+    protected function _getForeignPrikey($document = ''): GMP
     {
         // 要支持php5的话，没有什么好函数了，如果是php7或以上或以使用
         // $s = random_bytes(64) 或  this->rand_prikey(int bits=256)  代替
@@ -452,7 +451,7 @@ class SM2 {
         if (substr($s, 0, 1) == 'f') { //私钥不要太大了，超过 n值就不好了，
             $s = 'e' . substr($s, 1);
         }
-        return new BigInteger($s, 16);
+        return gmp_init($s, 16);
     }
 
     /**
@@ -487,7 +486,7 @@ class SM2 {
         return $this->hashSm3(hex2bin($hashStr) . $document);
     }
 
-    protected function _getForeignPubKeyX($k): BigInteger
+    protected function _getForeignPubKeyX($k): GMP
     {
         $pointG = new Point($this->gx, $this->gy);
         $kG = $pointG->mul($k, false);
@@ -552,7 +551,7 @@ class SM2 {
             throw new Exception("bad publicKey $publicKey");
         }
         if ($rtGmp) {
-            return array(new BigInteger($pubX, 16), new BigInteger($pubY, 16));
+            return array(gmp_init($pubX, 16), gmp_init($pubY, 16));
         }
         return array($pubX, $pubY);
     }
