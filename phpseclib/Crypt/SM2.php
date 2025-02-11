@@ -472,16 +472,16 @@ class SM2 {
         } else if ($len != 128) {
             throw new Exception('bad publicKey');
         }
-        $px = new BigInteger(substr($publicKey, 0, 64), 16);
-        $py = new BigInteger(substr($publicKey, 64, 64), 16);
+        $px = gmp_init(substr($publicKey, 0, 64), 16);
+        $py = gmp_init(substr($publicKey, 64, 64), 16);
         $zStr = $this->_getEntla($userId);
         $zStr .= $userId;
-        $zStr .= $this->a->toBits();
-        $zStr .= $this->b->toBits();
-        $zStr .= $this->gx->toBits();
-        $zStr .= $this->gy->toBits();
-        $zStr .= $px->toBits();
-        $zStr .= $py->toBits();
+        $zStr .= hex2bin(gmp_strval($this->a, 16));
+        $zStr .= hex2bin(gmp_strval($this->b, 16));
+        $zStr .= hex2bin(gmp_strval($this->gx, 16));
+        $zStr .= hex2bin(gmp_strval($this->gy, 16));
+        $zStr .= hex2bin(gmp_strval($px, 16));
+        $zStr .= hex2bin(gmp_strval($py, 16));
         $hashStr = $this->hashSm3($zStr);
         return $this->hashSm3(hex2bin($hashStr) . $document);
     }
